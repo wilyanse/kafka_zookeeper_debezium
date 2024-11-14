@@ -5,30 +5,31 @@ services:
      - 2181:2181
      - 2888:2888
      - 3888:3888
+    networks:
+      - kafka_network
+
   kafka:
     image: quay.io/debezium/kafka:${DEBEZIUM_VERSION}
     ports:
      - 9092:9092
     links:
      - zookeeper
-    depends_on:
-      zookeeper:
-        condition: service_started
     environment:
      - ZOOKEEPER_CONNECT=zookeeper:2181
+    networks:
+      - kafka_network
+
   mysql:
-    build:
-      context: ./mysql-db
-      dockerfile: Dockerfile
-    environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: health_db
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
+    image: quay.io/debezium/example-mysql:${DEBEZIUM_VERSION}
     ports:
-      - "3306:3306" 
-    volumes:
-      - ./mysql-db/init-scripts:/docker-entrypoint-initdb.d
+     - 3306:3306
+    environment:
+     - MYSQL_ROOT_PASSWORD=debezium
+     - MYSQL_USER=mysqluser
+     - MYSQL_PASSWORD=mysqlpw
+    networks:
+      - kafka_network
+
   connect:
     image: quay.io/debezium/connect:${DEBEZIUM_VERSION}
     ports:
@@ -37,15 +38,40 @@ services:
      - kafka
      - mysql
     environment:
-     - BOOTSTRAP_SERVERS=kafka:9092 
-     - GROUP_ID=1
-     - CONFIG_STORAGE_TOPIC=my_connect_configs
-     - OFFSET_STORAGE_TOPIC=my_connect_offsets
-     - STATUS_STORAGE_TOPIC=my_connect_statuses
+      - BOOTSTRAP_SERVERS=kafka:9092  # Use 'kafka' instead of 'localhost'
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=dbz.configs
+      - OFFSET_STORAGE_TOPIC=dbz.offsets
+      - STATUS_STORAGE_TOPIC=dbz.status
+      - CONNECT_KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - CONNECT_VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE=false
+      - CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE=false
+    networks:
+      - kafka_network
+
+  watcher:
+    image: quay.io/debezium/kafka:3.0
+    container_name: watcher
+    networks:
+      - kafka_network
+    environment:
+      - ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_BROKER=kafka:9092
+    command: watch-topic -a -k dbserver1.inventory.customers
     depends_on:
-      kafka:
-        condition: service_started
-      zookeeper:
-        condition: service_started
-      mysql:
-        condition: service_started
+      - zookeeper
+      - kafka
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    links:
+      - zookeeper
+      - kafka
+
+volumes:
+  mysql-data:
+
+networks:
+  kafka_network:
+    driver: bridge
