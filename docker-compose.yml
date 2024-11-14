@@ -2,43 +2,63 @@ services:
   zookeeper:
     image: quay.io/debezium/zookeeper:${DEBEZIUM_VERSION}
     ports:
-     - 2181:2181
-     - 2888:2888
-     - 3888:3888
+      - 2181:2181
+      - 2888:2888
+      - 3888:3888
     networks:
       - kafka_network
-
-  kafka:
-    image: quay.io/debezium/kafka:${DEBEZIUM_VERSION}
-    ports:
-     - 9092:9092
-    links:
-     - zookeeper
-    environment:
-     - ZOOKEEPER_CONNECT=zookeeper:2181
-    networks:
-      - kafka_network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      timeout: 10s
 
   mysql:
     image: quay.io/debezium/example-mysql:${DEBEZIUM_VERSION}
     ports:
-     - 3306:3306
+      - 3306:3306
     environment:
-     - MYSQL_ROOT_PASSWORD=debezium
-     - MYSQL_USER=mysqluser
-     - MYSQL_PASSWORD=mysqlpw
+      - MYSQL_ROOT_PASSWORD=debezium
+      - MYSQL_USER=mysqluser
+      - MYSQL_PASSWORD=mysqlpw
     networks:
       - kafka_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "--host=localhost", "--password=debezium"]
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      timeout: 10s
+
+  kafka:
+    image: quay.io/debezium/kafka:${DEBEZIUM_VERSION}
+    ports:
+      - 9092:9092
+    links:
+      - zookeeper
+    environment:
+      - ZOOKEEPER_CONNECT=zookeeper:2181
+    networks:
+      - kafka_network
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      timeout: 10s
 
   connect:
     image: quay.io/debezium/connect:${DEBEZIUM_VERSION}
     ports:
-     - 8083:8083
+      - 8083:8083
     links:
-     - kafka
-     - mysql
+      - kafka
+      - mysql
     environment:
-      - BOOTSTRAP_SERVERS=kafka:9092  # Use 'kafka' instead of 'localhost'
+      - BOOTSTRAP_SERVERS=kafka:9092
       - GROUP_ID=1
       - CONFIG_STORAGE_TOPIC=dbz.configs
       - OFFSET_STORAGE_TOPIC=dbz.offsets
@@ -49,6 +69,15 @@ services:
       - CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE=false
     networks:
       - kafka_network
+    depends_on:
+      - kafka
+      - mysql
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      timeout: 10s
 
   watcher:
     image: quay.io/debezium/kafka:3.0
@@ -60,8 +89,7 @@ services:
       - KAFKA_BROKER=kafka:9092
     command: watch-topic -a -k dbserver1.inventory.customers
     depends_on:
-      - zookeeper
-      - kafka
+      - connect
     restart: unless-stopped
     stdin_open: true
     tty: true
