@@ -11,16 +11,24 @@ services:
      - 9092:9092
     links:
      - zookeeper
+    depends_on:
+      zookeeper:
+        condition: service_started
     environment:
      - ZOOKEEPER_CONNECT=zookeeper:2181
   mysql:
-    image: quay.io/debezium/example-mysql:${DEBEZIUM_VERSION}
-    ports:
-     - 3306:3306
+    build:
+      context: ./mysql-db
+      dockerfile: Dockerfile
     environment:
-     - MYSQL_ROOT_PASSWORD=debezium
-     - MYSQL_USER=mysqluser
-     - MYSQL_PASSWORD=mysqlpw
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: health_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306" 
+    volumes:
+      - ./mysql-db/init-scripts:/docker-entrypoint-initdb.d
   connect:
     image: quay.io/debezium/connect:${DEBEZIUM_VERSION}
     ports:
@@ -29,8 +37,15 @@ services:
      - kafka
      - mysql
     environment:
-     - BOOTSTRAP_SERVERS=kafka:9092
+     - BOOTSTRAP_SERVERS=kafka:9092 
      - GROUP_ID=1
      - CONFIG_STORAGE_TOPIC=my_connect_configs
      - OFFSET_STORAGE_TOPIC=my_connect_offsets
      - STATUS_STORAGE_TOPIC=my_connect_statuses
+    depends_on:
+      kafka:
+        condition: service_started
+      zookeeper:
+        condition: service_started
+      mysql:
+        condition: service_started
