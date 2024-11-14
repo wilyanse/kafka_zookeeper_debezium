@@ -15,13 +15,18 @@ services:
       timeout: 10s
 
   mysql:
-    image: quay.io/debezium/example-mysql:${DEBEZIUM_VERSION}
+    build:
+      context: ./mysql-db
+      dockerfile: Dockerfile
+    environment:
+      MYSQL_ROOT_PASSWORD: debezium
+      MYSQL_DATABASE: health_db
+      MYSQL_USER: mysqluser
+      MYSQL_PASSWORD: mysqlpw
     ports:
       - 3306:3306
-    environment:
-      - MYSQL_ROOT_PASSWORD=debezium
-      - MYSQL_USER=mysqluser
-      - MYSQL_PASSWORD=mysqlpw
+    volumes:
+      - ./mysql-db/init-scripts:/docker-entrypoint-initdb.d
     networks:
       - kafka_network
     healthcheck:
